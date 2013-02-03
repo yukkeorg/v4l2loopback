@@ -25,8 +25,8 @@
 # define v4l2_file_operations file_operations
 #endif
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)
-void * v4l2l_vzalloc (	unsigned long size) {
- void*data=vmalloc(size);
+void *v4l2l_vzalloc (unsigned long size) {
+ void *data=vmalloc(size);
  memset(data, 0, size);
  return data;
 }
@@ -103,6 +103,9 @@ static int video_nr[MAX_DEVICES] = { [0 ... (MAX_DEVICES-1)] = -1 };
 module_param_array(video_nr, int, NULL, 0444);
 MODULE_PARM_DESC(video_nr, "video device numbers (-1=auto, 0=/dev/video0, etc.)");
 
+static int use_videostd = 1;
+module_param(use_videostd, int, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(use_videostd, "Use video standards");
 
 
 /* format specifications */
@@ -244,11 +247,6 @@ static const struct v4l2l_format formats[] = {
     .name     = "24 bpp RGB, be",
     .fourcc   = V4L2_PIX_FMT_RGB24,
     .depth    = 24,
-    .flags    = 0,
-  },{
-    .name     = "4:2:2, packed, YUYV",
-    .fourcc   = V4L2_PIX_FMT_YUYV,
-    .depth    = 16,
     .flags    = 0,
   },{
     .name     = "4:2:2, packed, YUYV",
@@ -1050,6 +1048,10 @@ vidioc_s_std        (struct file *file,
   v4l2_std_id req_std=0, supported_std=0;
   const v4l2_std_id all_std=V4L2_STD_ALL, no_std=0;
 
+  if(use_videostd) {
+    return -EINVAL;
+  }
+
   if(_std) {
     req_std=*_std;
     *_std=all_std;
@@ -1073,8 +1075,13 @@ vidioc_g_std        (struct file *file,
                      void *private_data,
                      v4l2_std_id *norm)
 {
-  if(norm)
-    *norm=V4L2_STD_ALL;
+  if(norm) {
+    if(use_videostd) {
+      *norm = V4L2_STD_ALL;
+    } else {
+      *norm = V4L2_STD_UNKNOWN;
+    }
+  }
   return 0;
 }
 /* gets a fake video standard
@@ -1085,8 +1092,13 @@ vidioc_querystd     (struct file *file,
                      void *private_data,
                      v4l2_std_id *norm)
 {
-  if(norm)
-    *norm=V4L2_STD_ALL;
+  if(norm) {
+    if(use_videostd) {
+      *norm = V4L2_STD_ALL;
+    } else {
+      *norm = V4L2_STD_UNKNOWN;
+    }
+  }
   return 0;
 }
 
@@ -1236,10 +1248,15 @@ vidioc_enum_output  (struct file *file,
   outp->type = V4L2_OUTPUT_TYPE_ANALOG;
   outp->audioset = 0;
   outp->modulator = 0;
-  outp->std = V4L2_STD_ALL;
 
 #ifdef V4L2_OUT_CAP_STD
-  outp->capabilities |= V4L2_OUT_CAP_STD;
+  if(use_videostd) {
+      outp->std = V4L2_STD_ALL;
+      outp->capabilities |= V4L2_OUT_CAP_STD;
+  } else {
+      outp->std = 0;
+      outp->capabilities &= ~(V4L2_OUT_CAP_STD);
+  }
 #endif
 
   return 0;
@@ -1305,13 +1322,18 @@ vidioc_enum_input   (struct file *file,
   inp->type = V4L2_INPUT_TYPE_CAMERA;
   inp->audioset = 0;
   inp->tuner = 0;
-  inp->std = V4L2_STD_ALL;
   inp->status = 0;
 
-
 #ifdef V4L2_IN_CAP_STD
-  inp->capabilities |= V4L2_IN_CAP_STD;
+  if (use_videostd > 0) {
+      inp->std = V4L2_STD_ALL;
+      inp->capabilities |= V4L2_IN_CAP_STD;
+  } else {
+      inp->std = 0;
+      inp->capabilities &= ~(V4L2_IN_CAP_STD);
+  }
 #endif
+
   return 0;
 }
 
